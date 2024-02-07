@@ -1,0 +1,1 @@
+Advanced bot for https://sunflower-land.com. it's open source play to earn game.
