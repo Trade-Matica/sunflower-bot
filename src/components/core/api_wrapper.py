@@ -213,3 +213,44 @@ class Rest:
             ),
         )
 
+    def mineStone(self, index: list) -> dict:
+        """
+        Usage:
+            `mineStone([1, "id", ...])`
+
+        Args:
+            index (list): list of stone to mine
+
+        Returns:
+            dict: (status_code, json)
+        """
+        actions = []
+
+        for x in index:
+            actions.append(
+                {
+                    "type": "stoneRock.mined",
+                    "index": x,
+                    "createdAt": self.__gatherTimestamp(),
+                }
+            )
+
+        return self.__wrapResponse(
+            self.client.post(
+                f"https://api.sunflower-land.com/autosave/{self.session.farmId}",
+                json={
+                    "deviceTrackerId": self.session.deviceTrackerId,
+                    "clientVersion": self.clientVersion,
+                    "sessionId": self.session.sessionId,
+                    "actions": actions,
+                    "cachedKey": base64.b64encode(
+                        json.dumps(
+                            {
+                                "loggedInAt": int(time.time() * 1000),
+                                "account": None,
+                            }
+                        ).encode("utf-8")
+                    ).decode("utf-8"),
+                },
+            ),
+        )

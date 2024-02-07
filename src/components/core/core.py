@@ -4,8 +4,16 @@ from loguru import logger
 from components.utils.config import BotConfig
 from components.core.api_wrapper import Rest
 from components.core.exceptions import GatherSessionError
-from components.core.crops import Crops, CropsSeed, __crops__, __crops_seed__
-from components.core.chop import TREE_RECOVERY_TIME
+from components.core.crops import (
+    Crops,
+    CropsSeed,
+    __crops__,
+    __crops_seed__,
+)
+from components.core.chop import (
+    TREE_RECOVERY_TIME,
+    STONE_RECOVERY_TIME,
+)
 
 
 class Utils:
@@ -41,6 +49,7 @@ class Bot(threading.Thread):
 
         # warnning messages
         self.noAxeShow = False
+        self.noPickaxeShow = False
 
     @logger.catch
     def farmCrops(self, data: dict) -> bool:
@@ -129,22 +138,26 @@ class Bot(threading.Thread):
                 logger.warning(f"no axes left, skiping")
                 self.noAxeShow = True
             return doneAction
-        
+
         self.noAxeShow = False
 
         AxeCount = int(inventory["Axe"])
         BaseAxeCount = AxeCount
 
         # https://github.com/sunflower-land/sunflower-land/blob/e446fe488091ce40fe9dc731c5b30e86644a0673/src/features/game/events/landExpansion/chop.ts#L44
+        """
         buff = TREE_RECOVERY_TIME
 
         if "Tree Hugger" in skills:
-            buff = buff * 0.8
+            buff -= buff * 0.8
 
         if "Time Warp Totem" in data["collectibles"]:
-            buff = buff * 0.5
+            buff -= buff * 0.5
 
         growSeconds = TREE_RECOVERY_TIME - buff
+        """
+
+        growSeconds = TREE_RECOVERY_TIME
 
         trees_to_cut = []
         for tree in trees:
@@ -158,14 +171,81 @@ class Bot(threading.Thread):
             if int(time.time()) >= (growSeconds + choppedAt):
                 trees_to_cut.append(tree)
                 AxeCount -= 1
-        
+
         if len(trees_to_cut) != 0:
             (code, chopData) = self.api.chopTimber(trees_to_cut)
 
             if code != 200:
                 logger.error(f"cannot chop timbers, code: {code} {chopData}")
             else:
-                logger.info(f"successfully chopped {len(trees_to_cut)} timbers, {BaseAxeCount-len(trees_to_cut)} Axe(x) left")
+                logger.info(
+                    f"successfully chopped {len(trees_to_cut)} timbers, {BaseAxeCount-len(trees_to_cut)} Axe(x) left"
+                )
+                doneAction = True
+
+        return doneAction
+
+    @logger.catch
+    def mineStones(self, data: dict) -> bool:
+        """Mine stones
+
+        Returns:
+            bool: return True if any action was taken.
+        """
+        doneAction = False
+
+        stones = data["stones"]
+        inventory = data["inventory"]
+        skills = data["bumpkin"]["skills"]
+
+        if "Pickaxe" not in inventory:
+            if not self.noPickaxeShow:
+                logger.warning(f"no pickaxe left, skiping")
+                self.noPickaxeShow = True
+            return doneAction
+
+        self.noPickaxeShow = False
+
+        PickaxeCount = int(inventory["Pickaxe"])
+        BasePickaxeCount = PickaxeCount
+
+        # https://github.com/sunflower-land/sunflower-land/blob/e446fe488091ce40fe9dc731c5b30e86644a0673/src/features/game/events/landExpansion/chop.ts#L44
+        """
+        buff = STONE_RECOVERY_TIME
+
+        if "Coal Face" in skills:
+            buff = buff * 0.2 * 1000
+
+        if "Time Warp Totem" in data["collectibles"]:
+            buff = buff * 0.5 * 1000
+
+        growSeconds = STONE_RECOVERY_TIME - buff
+        """
+        
+        growSeconds = STONE_RECOVERY_TIME
+
+        stones_to_mine = []
+        for stone in stones:
+            if PickaxeCount <= 0:
+                logger.warning(f"no pickaxe left, mining {len(stones_to_mine)} stones")
+                break
+
+            body = stones[stone]
+            minedAt = body.get("stone").get("minedAt") / 1000
+
+            if int(time.time()) >= (growSeconds + minedAt):
+                stones_to_mine.append(stone)
+                PickaxeCount -= 1
+
+        if len(stones_to_mine) != 0:
+            (code, mineData) = self.api.mineStone(stones_to_mine)
+
+            if code != 200:
+                logger.error(f"cannot mine stones, code: {code} {mineData}")
+            else:
+                logger.info(
+                    f"successfully mined {len(stones_to_mine)} stones, {BasePickaxeCount-len(stones_to_mine)} Pickaxe(x) left"
+                )
                 doneAction = True
 
         return doneAction
@@ -187,6 +267,9 @@ class Bot(threading.Thread):
             self.madeAction = True
 
         if self.chopTimber(data=farm):
+            self.madeAction = True
+
+        if self.mineStones(data=farm):
             self.madeAction = True
 
     @logger.catch
