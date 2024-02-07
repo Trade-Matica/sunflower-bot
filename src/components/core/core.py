@@ -5,6 +5,7 @@ from components.utils.config import BotConfig
 from components.core.api_wrapper import Rest
 from components.core.exceptions import GatherSessionError
 from components.core.crops import Crops, CropsSeed, __crops__, __crops_seed__
+from components.core.chop import TREE_RECOVERY_TIME
 
 
 class Utils:
@@ -37,6 +38,9 @@ class Bot(threading.Thread):
         )
 
         self.madeAction = True
+
+        # warnning messages
+        self.noAxeShow = False
 
     @logger.catch
     def farmCrops(self, data: dict) -> bool:
@@ -74,8 +78,8 @@ class Bot(threading.Thread):
                 )
                 continue
 
-            growSeconds = __crops__.get(body['crop'].get('name')).harvestSeconds
-            createdTime = body.get('crop').get('plantedAt') / 1000
+            growSeconds = __crops__.get(body["crop"].get("name")).harvestSeconds
+            createdTime = body.get("crop").get("plantedAt") / 1000
 
             if int(time.time()) >= (growSeconds + createdTime):
                 seeds_to_harvest.append(crop)
@@ -86,20 +90,82 @@ class Bot(threading.Thread):
             if code != 200:
                 logger.error(f"cannot plant seeds, code: {code} {plantData}")
             else:
+                seed_counts = {}
+                for seed in seeds_to_plant:
+                    seed_name = seed["seedName"]
+                    seed_counts[seed_name] = seed_counts.get(seed_name, 0) + 1
+
                 logger.info(
-                    f"successfully planted {len(seeds_to_plant)} seeds ({', '.join(x['seedName'] for x in seeds_to_plant)})"
+                    f"successfully planted {len(seeds_to_plant)} seeds ({', '.join(f'{count} {seed}' for seed, count in seed_counts.items())})"
                 )
                 doneAction = True
-        
+
         if len(seeds_to_harvest) != 0:
             (code, harvestData) = self.api.harvestCrops(seeds_to_harvest)
 
             if code != 200:
                 logger.error(f"cannot harvest seeds, code: {code} {harvestData}")
             else:
-                logger.info(
-                    f"successfully harvested {len(seeds_to_harvest)} seeds"
-                )
+                logger.info(f"successfully harvested {len(seeds_to_harvest)} seeds")
+                doneAction = True
+
+        return doneAction
+
+    @logger.catch
+    def chopTimber(self, data: dict) -> bool:
+        """Cut trees & collect wood
+
+        Returns:
+            bool: return True if any action was taken.
+        """
+        doneAction = False
+
+        trees = data["trees"]
+        inventory = data["inventory"]
+        skills = data["bumpkin"]["skills"]
+
+        if "Axe" not in inventory:
+            if not self.noAxeShow:
+                logger.warning(f"no axes left, skiping")
+                self.noAxeShow = True
+            return doneAction
+        
+        self.noAxeShow = False
+
+        AxeCount = int(inventory["Axe"])
+        BaseAxeCount = AxeCount
+
+        # https://github.com/sunflower-land/sunflower-land/blob/e446fe488091ce40fe9dc731c5b30e86644a0673/src/features/game/events/landExpansion/chop.ts#L44
+        buff = TREE_RECOVERY_TIME
+
+        if "Tree Hugger" in skills:
+            buff = buff * 0.8
+
+        if "Time Warp Totem" in data["collectibles"]:
+            buff = buff * 0.5
+
+        growSeconds = TREE_RECOVERY_TIME - buff
+
+        trees_to_cut = []
+        for tree in trees:
+            if AxeCount <= 0:
+                logger.warning(f"no axes left, cutting {len(trees_to_cut)} trees")
+                break
+
+            body = trees[tree]
+            choppedAt = body.get("wood").get("choppedAt") / 1000
+
+            if int(time.time()) >= (growSeconds + choppedAt):
+                trees_to_cut.append(tree)
+                AxeCount -= 1
+        
+        if len(trees_to_cut) != 0:
+            (code, chopData) = self.api.chopTimber(trees_to_cut)
+
+            if code != 200:
+                logger.error(f"cannot chop timbers, code: {code} {chopData}")
+            else:
+                logger.info(f"successfully chopped {len(trees_to_cut)} timbers, {BaseAxeCount-len(trees_to_cut)} Axe(x) left")
                 doneAction = True
 
         return doneAction
@@ -118,6 +184,9 @@ class Bot(threading.Thread):
         self.madeAction = False
 
         if self.farmCrops(data=farm):
+            self.madeAction = True
+
+        if self.chopTimber(data=farm):
             self.madeAction = True
 
     @logger.catch
