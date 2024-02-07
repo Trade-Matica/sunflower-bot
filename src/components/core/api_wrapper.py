@@ -14,7 +14,7 @@ class Rest:
     def __init__(self, authorization: str, clientVersion: str) -> None:
         self.clientVersion = clientVersion
         self.client = httpx.Client(
-            {
+            headers={
                 "accept": "*/*",
                 "accept-language": "fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7",
                 "authorization": authorization,
@@ -45,12 +45,23 @@ class Rest:
         )
 
     def __wrapResponse(self, response: httpx.Response) -> dict:
+        if response.status_code > 300:
+            return (
+                response.status_code,
+                response.text,
+            )
+
         return (
             response.status_code,
             response.json(),
         )
 
     def getSession(self) -> dict:
+        """Gather in-game stats, inventory etc..
+
+        Returns:
+            dict: (status_code, farm)
+        """
         (code, data) = self.__wrapResponse(
             self.client.post(
                 "https://api.sunflower-land.com/session",
@@ -59,6 +70,9 @@ class Rest:
                 },
             ),
         )
+
+        if code != 200:
+            return (code, "")
 
         self.session = SessionID(
             sessionId=data["sessionId"],
@@ -82,16 +96,17 @@ class Rest:
         Returns:
             dict: (status_code, json)
         """
+        actions = []
 
-        actions = [].append(
-            {
-                "type": "seed.planted",
-                "item": x["seedName"],
-                "index": x["index"],
-                "createdAt": self.__gatherTimestamp(),
-            }
-            for x in crops
-        )
+        for x in crops:
+            actions.append(
+                {
+                    "type": "seed.planted",
+                    "item": x["seedName"],
+                    "index": x["index"],
+                    "createdAt": self.__gatherTimestamp(),
+                }
+            )
 
         return self.__wrapResponse(
             self.client.post(
@@ -124,14 +139,16 @@ class Rest:
         Returns:
             dict: (status_code, json)
         """
-        actions = [].append(
-            {
-                "type": "crop.harvested",
-                "index": x,
-                "createdAt": self.__gatherTimestamp(),
-            }
-            for x in index
-        )
+        actions = []
+
+        for x in index:
+            actions.append(
+                {
+                    "type": "crop.harvested",
+                    "index": x,
+                    "createdAt": self.__gatherTimestamp(),
+                }
+            )
 
         return self.__wrapResponse(
             self.client.post(
