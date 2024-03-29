@@ -37,4 +37,4 @@ class Scaffold:
         logger.info(f"Starting bot on {len(accounts)} account(s).")
 
         for account in accounts:
-            Bot(account).start()
+            Bot(account).run() #.start()

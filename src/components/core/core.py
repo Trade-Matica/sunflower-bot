@@ -249,6 +249,13 @@ class Bot(threading.Thread):
                 doneAction = True
 
         return doneAction
+    
+    def cook(self):
+        time.sleep(3)
+        while True:
+            (status, _) = self.api.cookStuff()
+            print(status)
+            time.sleep(10)
 
     def clock(self):
         (status, farm) = self.api.getSession()
@@ -274,6 +281,7 @@ class Bot(threading.Thread):
 
     @logger.catch
     def run(self):
+        #threading.Thread(target=self.cook).start()
         while True:
             time.sleep(1)
 
